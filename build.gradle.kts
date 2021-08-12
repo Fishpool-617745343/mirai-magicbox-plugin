@@ -3,7 +3,7 @@ plugins {
 
     kotlin("jvm") version kt
     kotlin("plugin.serialization") version kt
-    id("net.mamoe.mirai-console") version "2.6.4"
+    id("net.mamoe.mirai-console") version "2.7-M1"
 }
 
 group = "net.im45.bot"
