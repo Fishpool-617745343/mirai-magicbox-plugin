@@ -1,7 +1,7 @@
 package net.im45.bot.magicbox
 
 import io.ktor.util.*
-import net.mamoe.mirai.Bot
+import net.im45.bot.magicbox.MBX.mbx
 import net.mamoe.mirai.console.command.*
 import net.mamoe.mirai.contact.Group
 import net.mamoe.mirai.message.data.flash
@@ -13,6 +13,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.*
 import java.util.stream.Collectors
 
 private const val errMsg = "Error: No such directory"
@@ -32,7 +33,7 @@ object MBX : SimpleCommand(
     MagicBox, "mbx"
 ) {
     private val IMAGE_EXT = arrayOf("jpg", "jpeg", "png", "gif")
-    private val magic: MutableList<File> = mutableListOf()
+    private val magic: List<File> = mutableListOf()
 
     internal fun reload(
         fromPath: String = Config.imageDir,
@@ -42,12 +43,13 @@ object MBX : SimpleCommand(
         if (!checkDirectory(fromPath)) return false
         val path = Paths.get(fromPath)
 
-        magic.clear()
-        magic += (if (recurseSubDirectories) Files.walk(path) else Files.list(path))
-            .filter { it.extension.toLowerCase() in IMAGE_EXT }
-            .map(Path::toFile)
-            .collect(Collectors.toList())
-
+        magic.toMutableList().let { ml ->
+            ml.clear()
+            ml += (if (recurseSubDirectories) Files.walk(path) else Files.list(path))
+                .filter { it.extension.lowercase(Locale.getDefault()) in IMAGE_EXT }
+                .map(Path::toFile)
+                .collect(Collectors.toList())
+        }
         return true
     }
 
@@ -63,19 +65,21 @@ object MBX : SimpleCommand(
             return
         }
 
-        val resource = magic.random().toExternalResource()
+        MagicBox.logger.debug("Sending an image to $subject")
 
-        if (subject is Group)
-            when (Config.groupTrusts.getValue(subject.id)) {
-                Trust.NOT -> return
-                Trust.UNKNOWN -> resource.sendAsImageTo(user)
-                Trust.MARGINAL -> resource.sendAsImageTo(subject).recallIn(Config.marginallyRecallIn)
-                Trust.FULL -> resource.uploadAsImage(subject).flash().sendTo(subject)
-                Trust.ULTIMATE -> resource.sendAsImageTo(subject)
-            }
-        else resource.sendAsImageTo(subject)
+        magic.random().toExternalResource().use {
+            if (subject is Group)
+                when (Config.groupTrusts.getValue(subject.id)) {
+                    Trust.NOT -> return
+                    Trust.UNKNOWN -> it.sendAsImageTo(user)
+                    Trust.MARGINAL -> it.sendAsImageTo(subject).recallIn(Config.marginallyRecallIn)
+                    Trust.FULL -> it.uploadAsImage(subject).flash().sendTo(subject)
+                    Trust.ULTIMATE -> it.sendAsImageTo(subject)
+                }
+            else it.sendAsImageTo(subject)
 
-        Data.served++
+            Data.served++
+        }
     }
 
     @Handler
@@ -98,9 +102,11 @@ object Control : CompositeCommand(
 
     @SubCommand
     suspend fun CommandSender.reload() {
-        if (MBX.reload())
+        if (MBX.reload()) {
             sendMessage("MagicBox 已重载")
-        else error()
+            if (this is ConsoleCommandSender)
+                mbx()
+        } else error()
     }
 
     @SubCommand
@@ -111,8 +117,7 @@ object Control : CompositeCommand(
 
     @SubCommand
     suspend fun UserCommandSender.trust(trust: Trust) {
-        if (subject is Group)
-            trust(subject as Group, trust)
+        (subject as? Group)?.let { trust(it, trust) }
     }
 
     @SubCommand
@@ -123,8 +128,7 @@ object Control : CompositeCommand(
 
     @SubCommand
     suspend fun UserCommandSender.distrust() {
-        if (subject is Group)
-            distrust(subject as Group)
+        (subject as? Group)?.let { distrust(it) }
     }
 
     @SubCommand
@@ -138,7 +142,7 @@ object Control : CompositeCommand(
         sendMessage(buildString {
             append("默认信任等级：${Config.defaultTrust}\n")
             Config.groupTrusts
-                .map { e -> "${e.key}\t${e.value}" }
+                .map { "${it.key}\t${it.value}" }
                 .run {
                     append(if (isEmpty()) "无信任设置" else joinToString("\n"))
                 }
