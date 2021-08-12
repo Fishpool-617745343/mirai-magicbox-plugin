@@ -15,14 +15,14 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.*
 import java.util.stream.Collectors
+import kotlin.io.path.isDirectory
 
 private const val errMsg = "Error: No such directory"
 internal val errLog
     get() = "$errMsg: ${Config.imageDir}"
 
-private fun checkDirectory(path: String = Config.imageDir): Boolean = runCatching {
-    Path.of(path).toFile().isDirectory
-}.isSuccess
+private fun checkDirectory(path: String = Config.imageDir): Boolean =
+    runCatching { Paths.get(path).isDirectory() }.getOrElse { false }
 
 private suspend fun CommandSender.error() {
     MagicBox.logger.error(errLog)
@@ -33,7 +33,7 @@ object MBX : SimpleCommand(
     MagicBox, "mbx"
 ) {
     private val IMAGE_EXT = arrayOf("jpg", "jpeg", "png", "gif")
-    private val magic: List<File> = mutableListOf()
+    private val magic: MutableList<File> = mutableListOf()
 
     internal fun reload(
         fromPath: String = Config.imageDir,
@@ -43,13 +43,12 @@ object MBX : SimpleCommand(
         if (!checkDirectory(fromPath)) return false
         val path = Paths.get(fromPath)
 
-        magic.toMutableList().let { ml ->
-            ml.clear()
-            ml += (if (recurseSubDirectories) Files.walk(path) else Files.list(path))
-                .filter { it.extension.lowercase(Locale.getDefault()) in IMAGE_EXT }
-                .map(Path::toFile)
-                .collect(Collectors.toList())
-        }
+        magic.clear()
+        magic += (if (recurseSubDirectories) Files.walk(path) else Files.list(path))
+            .filter { it.extension.lowercase(Locale.getDefault()) in IMAGE_EXT }
+            .map(Path::toFile)
+            .collect(Collectors.toList())
+
         return true
     }
 
